@@ -1,5 +1,5 @@
 import gym
-from alphaexpansion import main, gamerules
+from alphaexpansion import main, gamerules, display
 import numpy as np
 
 
@@ -15,6 +15,7 @@ class AlphaExpansionEnv(gym.Env):
             self.rewards_given["buildings"][building] = False
         self.action_space = self._action_space()
         self.observation_space = self._observation_space()
+        self.display = display.GameDisplay()
 
     def _action_space(self):
         # building id (can be blank), x, y, left or right click
@@ -82,7 +83,7 @@ class AlphaExpansionEnv(gym.Env):
             self.rewards_given["buildings"][building] = False
 
     def render(self, mode='human', close=False):
-        pass
+        self.display.show_screen(self.game)
 
     def _take_action(self, action):
         if action[3] == 0:

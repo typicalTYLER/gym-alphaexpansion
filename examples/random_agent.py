@@ -25,6 +25,7 @@ if __name__ == '__main__':
         while not done:
             action = agent.act()
             obs, reward, done, info = env.step(action)
+            env.render()
         episodes += 1
 
     env.close()
