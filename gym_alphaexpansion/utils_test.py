@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 
 import unittest
-import gym_starcraft.utils as utils
+import gym_alphaexpansion.utils as utils
 
 
 class UtilsTest(unittest.TestCase):

@@ -1,6 +1,5 @@
 import argparse
-
-import gym_starcraft.envs.single_battle_env as sc
+import gym_alphaexpansion.envs.alphaexpansion_env as ae
 
 
 class RandomAgent(object):
@@ -13,12 +12,10 @@ class RandomAgent(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ip', help='server ip')
-    parser.add_argument('--port', help='server port', default="11111")
     args = parser.parse_args()
 
-    env = sc.SingleBattleEnv(args.ip, args.port)
-    env.seed(123)
+    env = ae.AlphaExpansionEnv()
+    env.seed(0)
     agent = RandomAgent(env.action_space)
 
     episodes = 0
