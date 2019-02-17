@@ -1,18 +1,18 @@
+import collections
+import operator
+
 import gym
 from alphaexpansion import main, gamerules, display
 import numpy as np
+
+from gym_alphaexpansion import utils
 
 
 class AlphaExpansionEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.game = main.Game()
-        self.rewards_given = {"resources": {}, "buildings": {}}
-        for resource in gamerules.RESOURCE_DEFINITIONS:
-            self.rewards_given["resources"][resource] = False
-        for building, defintion in enumerate(gamerules.BUILDING_DEFINITIONS):
-            self.rewards_given["buildings"][building] = False
+        self.reset()
         self.action_space = self._action_space()
         self.observation_space = self._observation_space()
         self.display = display.GameDisplay()
@@ -70,17 +70,22 @@ class AlphaExpansionEnv(gym.Env):
         self._take_action(action)
         self.game.proceedTick()
         reward = self._get_reward()
+        self.total_reward += reward
         ob = self._get_observation()
+        info = self._get_info(ob)
         episode_over = False
-        return ob, reward, episode_over, {}
+        return ob, reward, episode_over, info
 
     def reset(self):
         self.game = main.Game()
-        self.rewards_given = {"resources": {}, "buildings": {}}
+        self.total_reward = 0
+        self.rewards_given = {"resources": {}, "buildings": {}, "income": {}}
         for resource in gamerules.RESOURCE_DEFINITIONS:
             self.rewards_given["resources"][resource] = False
         for building, defintion in enumerate(gamerules.BUILDING_DEFINITIONS):
             self.rewards_given["buildings"][building] = False
+        for resource in gamerules.RESOURCE_DEFINITIONS:
+            self.rewards_given["income"][resource] = False
 
     def render(self, mode='human', close=False):
         self.display.show_screen(self.game)
@@ -92,10 +97,11 @@ class AlphaExpansionEnv(gym.Env):
             self.game.gym_right_click(action[2], action[1])
 
     def _get_reward(self):
-        """ Reward is given for the first building of each type built and the first resource of each type gathered. """
+        """ Reward is given for the first building, first resource, and first income. """
         reward = 0.0
         resources_rewarded = []
         buildings_rewarded = []
+        income_rewarded = []
         for resource_id, given in self.rewards_given["resources"].items():
             if not given:
                 if self.game.balance[resource_id] > 0:
@@ -106,11 +112,44 @@ class AlphaExpansionEnv(gym.Env):
                 if self.game.buildingAmts[building_id] > 0:
                     buildings_rewarded.append(building_id)
                     reward += 1
+        for resource_id, given in self.rewards_given["income"].items():
+            if not given:
+                if self.game.balDiff[resource_id] > 0:
+                    income_rewarded.append(resource_id)
+                    reward += 1
         for resource_id in resources_rewarded:
             self.rewards_given["resources"][resource_id] = True
         for building_id in buildings_rewarded:
             self.rewards_given["buildings"][building_id] = True
+        for resource_id in income_rewarded:
+            self.rewards_given["income"][resource_id] = True
         return reward
 
     def _get_observation(self):
-        return self._observation_space()
+        relative_incomes = utils.abs_max_scaling(utils.negative_allowing_log_10(np.asarray(list(self.game.balDiff.values()))))
+        terrain = np.asarray(utils.apply_f(self.game.map.map, operator.attrgetter('tile')))
+        buildings = np.negative(np.ones((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT)))
+        building_dict = collections.defaultdict(list)
+        max_level_building_dict = collections.OrderedDict()
+        for building in self.game.buildings:
+            buildings[building.x][building.y] = building.build
+            building_dict[building.build].append(building.level)
+        for building_id, level_list in building_dict.items():
+            max_level_building_dict[building_id] = np.asarray(level_list).max()
+        building_levels = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT))
+        for building in self.game.buildings:
+            if max_level_building_dict[building.build] > 0:
+                building_levels[building.x][building.y] = building.level / max_level_building_dict[building.build]
+            else:
+                building_levels[building.x][building.y] = 1
+        space = {"relative_income": relative_incomes,
+                 "terrain": terrain,
+                 "buildings": buildings,
+                 "building_levels": building_levels}
+        return space
+
+    def _get_info(self, obs):
+        info = {"total_reward": self.total_reward}
+        info = {**info, **obs}
+        return info
+

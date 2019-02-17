@@ -1,20 +1,20 @@
-import math
+import numpy as np
 
 
-def get_degree(x1, y1, x2, y2):
-    radians = math.atan2(y2 - y1, x2 - x1)
-    return math.degrees(radians)
+def negative_allowing_log_10(input):
+    mask = input < 0
+    output = np.clip(np.log10(np.abs(input)), 0, np.inf)
+    output[mask] = np.negative(output[mask])
+    return output
 
 
-def get_distance(x1, y1, x2, y2):
-    return math.hypot(x2 - x1, y2 - y1)
+def abs_max_scaling(input):
+    abs_max = np.abs(input.max())
+    return np.divide(input, abs_max, where=abs_max != 0)
 
 
-def get_position(degree, distance, x1, y1):
-    theta = math.pi / 2 - math.radians(degree)
-    return x1 + distance * math.sin(theta), y1 + distance * math.cos(theta)
-
-
-def print_progress(episodes, wins):
-    print("Episodes: %4d | Wins: %4d | WinRate: %1.3f" % (
-        episodes, wins, wins / (episodes + 1E-6)))
+def apply_f(a, f):
+    if isinstance(a, list):
+        return map(lambda t: apply_f(t, f), a)
+    else:
+        return f(a)
