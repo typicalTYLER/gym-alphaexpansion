@@ -26,9 +26,8 @@ if __name__ == '__main__':
         while not done:
             action = agent.act()
             obs, reward, done, info = env.step(action)
-            if steps % 1000 == 0:
+            if steps % 10000 == 0:
                 print(info)
-            env.render()
             steps += 1
         episodes += 1
 
