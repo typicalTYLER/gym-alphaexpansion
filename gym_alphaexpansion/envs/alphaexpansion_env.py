@@ -17,10 +17,13 @@ class AlphaExpansionEnv(gym.Env):
         self.observation_space = self._observation_space()
         self.display = display.GameDisplay()
 
+    # 34x28x16x2=30464 possible actions by default
     def _action_space(self):
         # building id (can be blank), x, y, left or right click
         action = gym.spaces.MultiDiscrete(
             [len(gamerules.BUILDING_DEFINITIONS)+1, self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 2])
+        # action = gym.spaces.Discrete((len(gamerules.BUILDING_DEFINITIONS)+1) * self.game.map.CHUNK_WIDTH
+        #                              * self.game.map.CHUNK_HEIGHT * 2)
         return action
 
     def _observation_space(self):
@@ -67,9 +70,9 @@ class AlphaExpansionEnv(gym.Env):
                  However, official evaluations of your agent are not allowed to
                  use this for learning.
         """
-        self._take_action(action)
+        action_useful = self._take_action(action)
         self.game.proceedTick()
-        reward = self._get_reward()
+        reward = self._get_reward(action_useful)
         self.total_reward += reward
         ob = self._get_observation()
         info = self._get_info(ob)
@@ -96,8 +99,8 @@ class AlphaExpansionEnv(gym.Env):
         else:
             self.game.gym_right_click(action[2], action[1])
 
-    def _get_reward(self):
-        """ Reward is given for the first building, first resource, and first income. """
+    def _get_reward(self, action_useful):
+        """ Reward is given for the first building, first resource, and first income. Punished if action not useful."""
         reward = 0.0
         resources_rewarded = []
         buildings_rewarded = []
@@ -123,6 +126,8 @@ class AlphaExpansionEnv(gym.Env):
             self.rewards_given["buildings"][building_id] = True
         for resource_id in income_rewarded:
             self.rewards_given["income"][resource_id] = True
+        if not action_useful:
+            reward -= 1
         return reward
 
     def _get_observation(self):
