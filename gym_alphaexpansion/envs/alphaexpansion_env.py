@@ -132,7 +132,7 @@ class AlphaExpansionEnv(gym.Env):
 
     def _get_observation(self):
         relative_incomes = utils.abs_max_scaling(utils.negative_allowing_log_10(np.asarray(list(self.game.balDiff.values()))))
-        terrain = np.log2(utils.vectorized_tile_getter(np.asarray(self.game.map.map)))
+        terrain = np.log2(utils.tile_getter(np.asarray(self.game.map.map)))
         buildings = np.negative(np.ones((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT), dtype=np.int))
         building_dict = collections.defaultdict(list)
         max_level_building_dict = collections.OrderedDict()

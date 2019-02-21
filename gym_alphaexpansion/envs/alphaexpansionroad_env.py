@@ -1,11 +1,22 @@
 import collections
 import operator
+import profile
 
 import gym
 from alphaexpansion import main, gamerules, display
 import numpy as np
 
 from gym_alphaexpansion import utils
+
+road_adjacent_tile_flavor_score = {
+    1: 3,  # peak
+    2: 3,  # mountain
+    4: 3,  # forest
+    8: 1,  # land
+    16: 1,  # coast
+    32: 0,  # water
+    64: 0  # deep water
+}
 
 
 def _adjacent_to_road(game_map, y, x):
@@ -20,17 +31,38 @@ def _adjacent_to_road(game_map, y, x):
     return False
 
 
+def _score_new_road(game_map, y, x):
+    score = 0.0
+    tile = game_map.map[y][x].tile
+    if y - 1 >= 0:
+        other_tile = game_map.map[y - 1][x]
+        if hasattr(other_tile, 'build'):
+            score -= road_adjacent_tile_flavor_score[tile]
+        else:
+            score += road_adjacent_tile_flavor_score[other_tile.tile]
+    if x - 1 >= 0:
+        other_tile = game_map.map[y][x - 1]
+        if hasattr(other_tile, 'build'):
+            score -= road_adjacent_tile_flavor_score[tile]
+        else:
+            score += road_adjacent_tile_flavor_score[other_tile.tile]
+    if len(game_map.map) > y + 1:
+        other_tile = game_map.map[y + 1][x]
+        if hasattr(other_tile, 'build'):
+            score -= road_adjacent_tile_flavor_score[tile]
+        else:
+            score += road_adjacent_tile_flavor_score[other_tile.tile]
+    if x + 1 < game_map.CHUNK_WIDTH:
+        other_tile = game_map.map[y][x + 1]
+        if hasattr(other_tile, 'build'):
+            score -= road_adjacent_tile_flavor_score[tile]
+        else:
+            score += road_adjacent_tile_flavor_score[other_tile.tile]
+    return score
+
+
 class AlphaExpansionRoadEnv(gym.Env):
     metadata = {'render.modes': ['human']}
-    road_adjacent_tile_flavor_score = {
-        1: 3,  # peak
-        2: 3,  # mountain
-        4: 3,  # forest
-        8: 1,  # land
-        16: 1,  # coast
-        32: 0,  # water
-        64: 0  # deep water
-    }
 
     def __init__(self):
         self.reset()
@@ -46,8 +78,8 @@ class AlphaExpansionRoadEnv(gym.Env):
 
     def _observation_space(self):
         # observation space is terrain type if empty, last value if has a road
-        return gym.spaces.Box(low=0, high=len(gamerules.TILE_DEFINITIONS),
-                              shape=(self.game.map.CHUNK_WIDTH * self.game.map.CHUNK_HEIGHT,))
+        return gym.spaces.MultiBinary(
+            (len(gamerules.TILE_DEFINITIONS) + 1) * self.game.map.CHUNK_WIDTH * self.game.map.CHUNK_HEIGHT)
 
     def step(self, action):
         """
@@ -78,9 +110,9 @@ class AlphaExpansionRoadEnv(gym.Env):
                  However, official evaluations of your agent are not allowed to
                  use this for learning.
         """
-        action_useful = self._take_action(action)
+        self._take_action(action)
         self.game.proceedTick()
-        reward = self._get_reward(action_useful)
+        reward = self._get_reward()
         self.total_reward += reward
         ob = self._get_observation()
         info = self._get_info(ob)
@@ -90,6 +122,7 @@ class AlphaExpansionRoadEnv(gym.Env):
     def reset(self):
         self.game = main.Game()
         self.game.balance[2] = 1e30
+        self.rewarded_buildings = []
         self.total_reward = 0
         return self._get_observation()
 
@@ -101,25 +134,25 @@ class AlphaExpansionRoadEnv(gym.Env):
             return True
         return self.game.gym_left_click(action // self.game.map.CHUNK_WIDTH, action % self.game.map.CHUNK_WIDTH, 1)
 
-    def _get_reward(self, action_useful):
+    def _get_reward(self):
         """ Reward is given for number of tiles adjacent to a road"""
         reward = 0.0
-        for y in range(len(self.game.map.map)):
-            for x in range(self.game.map.CHUNK_WIDTH):
-                tile = self.game.map.map[y][x]
-                if hasattr(tile, "build") and tile.build == 1:  # road
-                    reward -= 0.1  # small negative reward for each road
-                elif _adjacent_to_road(self.game.map, y, x):
-                    reward += self.road_adjacent_tile_flavor_score[tile.tile]
-        if not action_useful:
-            reward -= 1
+        for tile in self.game.buildings:
+            if tile not in self.rewarded_buildings:
+                y = tile.y
+                x = tile.x
+                reward = _score_new_road(self.game.map, y, x)
+                self.rewarded_buildings.append(tile)
         return reward
 
     def _get_observation(self):
-        terrain = np.log2(utils.vectorized_tile_getter(np.asarray(self.game.map.map)))
+
+        terrain = np.log2(utils.tile_getter(np.asarray(self.game.map.map))).astype(np.int8)
+        terrain_one_hot = np.eye(len(gamerules.TILE_DEFINITIONS), dtype=np.int8)[terrain]
+        roads = np.zeros(terrain.shape, dtype=np.int8)
         for building in self.game.buildings:
-            terrain[building.y][building.x] = len(gamerules.TILE_DEFINITIONS)
-        return terrain.ravel()
+            roads[building.y][building.x] = 1
+        return np.dstack((terrain_one_hot, roads)).ravel()
 
     def _get_info(self, obs):
         info = {"total_reward": self.total_reward,

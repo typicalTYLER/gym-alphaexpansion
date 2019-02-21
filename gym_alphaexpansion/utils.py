@@ -25,4 +25,5 @@ def apply_attr_getter(input):
     return operator.attrgetter('tile')(input)
 
 
-vectorized_tile_getter = np.vectorize(apply_attr_getter)
+# tile_getter = np.frompyfunc(operator.attrgetter('tile'), 1, 1)
+tile_getter = np.vectorize(apply_attr_getter)
