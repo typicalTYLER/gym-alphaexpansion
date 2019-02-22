@@ -9,5 +9,5 @@ register(
 register(
     id='AlphaExpansionRoad-v0',
     entry_point='gym_alphaexpansion.envs.alphaexpansionroad_env:AlphaExpansionRoadEnv',
-    max_episode_steps=1000
+    max_episode_steps=500
 )
