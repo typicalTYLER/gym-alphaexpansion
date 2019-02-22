@@ -18,6 +18,8 @@ road_adjacent_tile_flavor_score = {
     64: 0  # deep water
 }
 
+MAX_STEPS = 1000
+
 
 def _adjacent_to_road(game_map, y, x):
     if y - 1 >= 0 and hasattr(game_map.map[y - 1][x], 'build'):
@@ -64,7 +66,8 @@ def _score_new_road(game_map, y, x):
 class AlphaExpansionRoadEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, ravel=True):
+        self.ravel = ravel
         self.reset()
         self.action_space = self._action_space()
         self.observation_space = self._observation_space()
@@ -110,13 +113,13 @@ class AlphaExpansionRoadEnv(gym.Env):
                  However, official evaluations of your agent are not allowed to
                  use this for learning.
         """
-        self._take_action(action)
+        action_useful = self._take_action(action)
         self.game.proceedTick()
-        reward = self._get_reward()
+        reward = self._get_reward(action_useful)
         self.total_reward += reward
-        ob = self._get_observation()
+        ob = self._get_observation(ravel=self.ravel)
         info = self._get_info(ob)
-        episode_over = False
+        episode_over = MAX_STEPS < self.game.tick
         return ob, reward, episode_over, info
 
     def reset(self):
@@ -124,7 +127,7 @@ class AlphaExpansionRoadEnv(gym.Env):
         self.game.balance[2] = 1e30
         self.rewarded_buildings = []
         self.total_reward = 0
-        return self._get_observation()
+        return self._get_observation(ravel=self.ravel)
 
     def render(self, mode='human', close=False):
         self.display.show_screen(self.game)
@@ -134,7 +137,7 @@ class AlphaExpansionRoadEnv(gym.Env):
             return True
         return self.game.gym_left_click(action // self.game.map.CHUNK_WIDTH, action % self.game.map.CHUNK_WIDTH, 1)
 
-    def _get_reward(self):
+    def _get_reward(self, action_useful):
         """ Reward is given for number of tiles adjacent to a road"""
         reward = 0.0
         for tile in self.game.buildings:
@@ -143,16 +146,20 @@ class AlphaExpansionRoadEnv(gym.Env):
                 x = tile.x
                 reward = _score_new_road(self.game.map, y, x)
                 self.rewarded_buildings.append(tile)
+        reward += (0 if action_useful else -0.1)
         return reward
 
-    def _get_observation(self):
+    def _get_observation(self, ravel=True):
 
-        terrain = np.log2(utils.tile_getter(np.asarray(self.game.map.map))).astype(np.int8)
-        terrain_one_hot = np.eye(len(gamerules.TILE_DEFINITIONS), dtype=np.int8)[terrain]
-        roads = np.zeros(terrain.shape, dtype=np.int8)
+        terrain = np.log2(utils.tile_getter(np.asarray(self.game.map.map))).astype(np.uint8)
+        terrain_one_hot = np.eye(len(gamerules.TILE_DEFINITIONS), dtype=np.uint8)[terrain]
+        roads = np.zeros(terrain.shape, dtype=np.uint8)
         for building in self.game.buildings:
             roads[building.y][building.x] = 1
-        return np.dstack((terrain_one_hot, roads)).ravel()
+        stacked = np.dstack((terrain_one_hot, roads))
+        if ravel:
+            stacked = stacked.ravel()
+        return stacked
 
     def _get_info(self, obs):
         info = {"total_reward": self.total_reward,
