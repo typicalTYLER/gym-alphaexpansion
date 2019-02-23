@@ -1,5 +1,6 @@
 import numpy as np
 import operator
+from alphaexpansion import gamerules
 
 
 def negative_allowing_log_10(input):
@@ -21,9 +22,19 @@ def apply_f(a, f):
         return f(a)
 
 
-def apply_attr_getter(input):
+def apply_tile_getter(input):
     return operator.attrgetter('tile')(input)
 
 
+def apply_can_build(input, build, game):
+    if not hasattr(input, 'build') and gamerules.BUILDING_DEFINITIONS[build]['tile'] & getattr(input, 'tile') \
+            and gamerules.isAffordable(build, 0, game):
+        return 1
+    else:
+        return 0
+
+
 # tile_getter = np.frompyfunc(operator.attrgetter('tile'), 1, 1)
-tile_getter = np.vectorize(apply_attr_getter)
+tile_getter = np.vectorize(apply_tile_getter)
+
+can_build = np.vectorize(apply_can_build)

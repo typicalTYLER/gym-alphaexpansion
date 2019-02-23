@@ -32,14 +32,25 @@ class AlphaExpansionEnv(gym.Env):
         # buildings is the building type on every space (-1 is no building)
         # building_levels are the building levels relative to that building type's max level currently out on the field
         return gym.spaces.Dict(
-            {"relative_income": gym.spaces.Box(low=-1, high=1, shape=(len(gamerules.RESOURCE_DEFINITIONS), 1)),
-             "terrain": gym.spaces.Box(low=0, high=len(gamerules.TILE_DEFINITIONS)-1,
-                                       shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT)),
-             "buildings": gym.spaces.Box(low=-1, high=len(gamerules.BUILDING_DEFINITIONS)-1,
-                                         shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT)),
+            {"relative_income": gym.spaces.Box(low=-1, high=1,
+                                               shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT,
+                                                      len(gamerules.RESOURCE_DEFINITIONS)), dtype=np.float32),
+             "terrain": gym.spaces.Box(low=0, high=1,
+                                       shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT,
+                                              len(gamerules.TILE_DEFINITIONS)), dtype=np.uint8),
+             "buildings": gym.spaces.Box(low=0, high=1,
+                                         shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT,
+                                                len(gamerules.BUILDING_DEFINITIONS)), dtype=np.uint8),
              "building_levels": gym.spaces.Box(low=0, high=1,
-                                               shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT))})
-        #will add "can_upgrade" and "can_purchase"
+                                               shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1),
+                                               dtype=np.float32),
+             "can_upgrade": gym.spaces.Box(low=0, high=1,
+                                           shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1),
+                                           dtype=np.uint8),
+             "can_build": gym.spaces.Box(low=0, high=1,
+                                         shape=(self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT,
+                                                len(gamerules.BUILDING_DEFINITIONS)),
+                                         dtype=np.uint8)})
 
     def step(self, action):
         """
@@ -89,6 +100,7 @@ class AlphaExpansionEnv(gym.Env):
             self.rewards_given["buildings"][building] = False
         for resource in gamerules.RESOURCE_DEFINITIONS:
             self.rewards_given["income"][resource] = False
+        return self._get_observation()
 
     def render(self, mode='human', close=False):
         self.display.show_screen(self.game)
@@ -131,30 +143,53 @@ class AlphaExpansionEnv(gym.Env):
         return reward
 
     def _get_observation(self):
-        relative_incomes = utils.abs_max_scaling(utils.negative_allowing_log_10(np.asarray(list(self.game.balDiff.values()))))
-        terrain = np.log2(utils.tile_getter(np.asarray(self.game.map.map)))
-        buildings = np.negative(np.ones((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT), dtype=np.int))
+        relative_incomes = utils.abs_max_scaling(
+            utils.negative_allowing_log_10(
+                 np.asarray(list(self.game.balDiff.values())))).astype(np.float32)
+        stacked_relative_income_planes = np.empty((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 0))
+        for relative_income in relative_incomes:
+            stacked_relative_income_planes = \
+                np.dstack(
+                    (stacked_relative_income_planes,
+                     np.full((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1), relative_income)))
+        map_ndarray = np.asarray(self.game.map.map).transpose()
+        terrain = np.log2(utils.tile_getter(map_ndarray)).astype(np.uint8)
+        terrain_one_hot = np.eye(len(gamerules.TILE_DEFINITIONS), dtype=np.uint8)[terrain]
+        buildings = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT), dtype=np.uint8)
         building_dict = collections.defaultdict(list)
         max_level_building_dict = collections.OrderedDict()
+        can_upgrade = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1), dtype=np.uint8)
+        can_build = np.empty((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT))
+        for building_id in range(len(gamerules.BUILDING_DEFINITIONS)):
+            can_build = np.dstack((can_build,
+                                   utils.can_build(map_ndarray,
+                                                   np.full_like(map_ndarray, building_id),
+                                                   np.full_like(map_ndarray, self.game))))
         for building in self.game.buildings:
-            buildings[building.x][building.y] = building.build
+            buildings[building.x][building.y] = building.build + 1
             building_dict[building.build].append(building.level)
+            if gamerules.isAffordable(building.build, building.level + 1, self.game):
+                can_upgrade[building.x][building.y][0] = 1
+        buildings_one_hot = np.eye(len(gamerules.BUILDING_DEFINITIONS) + 1, dtype=np.uint8)[buildings]
+        buildings_one_hot = np.dsplit(buildings_one_hot, [1])[1]  # lop off first layer
         for building_id, level_list in building_dict.items():
             max_level_building_dict[building_id] = np.asarray(level_list).max()
-        building_levels = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT))
+        building_levels = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1), dtype=np.float32)
         for building in self.game.buildings:
             if max_level_building_dict[building.build] > 0:
-                building_levels[building.x][building.y] = building.level / max_level_building_dict[building.build]
+                building_levels[building.x][building.y][0] = building.level / max_level_building_dict[building.build]
             else:
-                building_levels[building.x][building.y] = 1
-        space = {"relative_income": relative_incomes,
-                 "terrain": terrain,
-                 "buildings": buildings,
-                 "building_levels": building_levels}
+                building_levels[building.x][building.y][0] = 1
+        space = {"relative_income": stacked_relative_income_planes,
+                 "terrain": terrain_one_hot,
+                 "buildings": buildings_one_hot,
+                 "building_levels": building_levels,
+                 "can_upgrade": can_upgrade,
+                 "can_build": can_build
+        }
         return space
 
     def _get_info(self, obs):
         info = {"total_reward": self.total_reward}
-        info = {**info, **obs}
         return info
 

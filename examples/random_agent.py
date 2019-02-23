@@ -1,5 +1,5 @@
 import argparse
-import gym_alphaexpansion.envs.alphaexpansionroad_env as ae
+import gym_alphaexpansion.envs.alphaexpansion_env as ae
 
 
 class RandomAgent(object):
@@ -14,7 +14,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
 
-    env = ae.AlphaExpansionRoadEnv()
+    env = ae.AlphaExpansionEnv()
     env.seed(0)
     agent = RandomAgent(env.action_space)
 
