@@ -4,7 +4,7 @@ from gym.envs.registration import register
 register(
     id='AlphaExpansion-v0',
     entry_point='gym_alphaexpansion.envs.alphaexpansion_env:AlphaExpansionEnv',
-    max_episode_steps=10000
+    max_episode_steps=5000
 )
 
 register(

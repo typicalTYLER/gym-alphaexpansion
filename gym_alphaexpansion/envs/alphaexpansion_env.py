@@ -7,15 +7,20 @@ import numpy as np
 
 from gym_alphaexpansion import utils
 
+MAX_STEPS = 10000
+HEIGHT = 5
+WIDTH = 5
+
 
 class AlphaExpansionEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
+        self.map_seed = None
         self.reset()
         self.action_space = self._action_space()
         self.observation_space = self._observation_space()
-        self.display = display.GameDisplay()
+        self.display = display.GameDisplay(height=HEIGHT, width=WIDTH)
 
     # 34x28x16x2=30464 possible actions by default
     def _action_space(self):
@@ -87,11 +92,11 @@ class AlphaExpansionEnv(gym.Env):
         self.total_reward += reward
         ob = self._get_observation()
         info = self._get_info(ob)
-        episode_over = False
+        episode_over = MAX_STEPS < self.game.tick
         return ob, reward, episode_over, info
 
     def reset(self):
-        self.game = main.Game()
+        self.game = main.Game(seed=self.map_seed, height=HEIGHT, width=WIDTH)
         self.total_reward = 0
         self.rewards_given = {"resources": {}, "buildings": {}, "income": {}}
         for resource in gamerules.RESOURCE_DEFINITIONS:
@@ -105,11 +110,14 @@ class AlphaExpansionEnv(gym.Env):
     def render(self, mode='human', close=False):
         self.display.show_screen(self.game)
 
+    def seed(self, seed=None):
+        self.map_seed = seed
+
     def _take_action(self, action):
-        if action[3] == 0:
-            self.game.gym_left_click(action[2], action[1], action[0]-1)
+        if action[0] == 0:
+            self.game.gym_left_click(action[3], action[2], action[1]-1)
         else:
-            self.game.gym_right_click(action[2], action[1])
+            self.game.gym_right_click(action[3], action[2])
 
     def _get_reward(self, action_useful):
         """ Reward is given for the first building, first resource, and first income. Punished if action not useful."""
@@ -138,8 +146,8 @@ class AlphaExpansionEnv(gym.Env):
             self.rewards_given["buildings"][building_id] = True
         for resource_id in income_rewarded:
             self.rewards_given["income"][resource_id] = True
-        if not action_useful:
-            reward -= 1
+        # if not action_useful:
+        #     reward -= 0.001
         return reward
 
     def _get_observation(self):
