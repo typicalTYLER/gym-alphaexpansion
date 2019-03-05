@@ -8,8 +8,10 @@ import numpy as np
 from gym_alphaexpansion import utils
 
 MAX_STEPS = 10000
-HEIGHT = 5
-WIDTH = 5
+HEIGHT = 7
+WIDTH = 7
+MIN_FORESTS = 4
+MIN_MOUNTAINS = 4
 
 
 class AlphaExpansionEnv(gym.Env):
@@ -22,13 +24,11 @@ class AlphaExpansionEnv(gym.Env):
         self.observation_space = self._observation_space()
         self.display = display.GameDisplay(height=HEIGHT, width=WIDTH)
 
-    # 34x28x16x2=30464 possible actions by default
+    # 34x28x16=15232 possible actions by default
     def _action_space(self):
-        # building id (can be blank), x, y, left or right click
+        # building id (0 = right click), x, y
         action = gym.spaces.MultiDiscrete(
-            [len(gamerules.BUILDING_DEFINITIONS)+1, self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 2])
-        # action = gym.spaces.Discrete((len(gamerules.BUILDING_DEFINITIONS)+1) * self.game.map.CHUNK_WIDTH
-        #                              * self.game.map.CHUNK_HEIGHT * 2)
+            [len(gamerules.BUILDING_DEFINITIONS)+1, self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT])
         return action
 
     def _observation_space(self):
@@ -96,7 +96,8 @@ class AlphaExpansionEnv(gym.Env):
         return ob, reward, episode_over, info
 
     def reset(self):
-        self.game = main.Game(seed=self.map_seed, height=HEIGHT, width=WIDTH)
+        self.game = main.Game(
+            seed=self.map_seed, height=HEIGHT, width=WIDTH, min_forests=MIN_FORESTS, min_mountains=MIN_MOUNTAINS)
         self.total_reward = 0
         self.rewards_given = {"resources": {}, "buildings": {}, "income": {}}
         for resource in gamerules.RESOURCE_DEFINITIONS:
@@ -114,10 +115,10 @@ class AlphaExpansionEnv(gym.Env):
         self.map_seed = seed
 
     def _take_action(self, action):
-        if action[0] == 0:
-            self.game.gym_left_click(action[3], action[2], action[1]-1)
+        if action[0] > 0:
+            self.game.gym_left_click(action[1], action[2], action[0]-1)
         else:
-            self.game.gym_right_click(action[3], action[2])
+            self.game.gym_right_click(action[1], action[2])
 
     def _get_reward(self, action_useful):
         """ Reward is given for the first building, first resource, and first income. Punished if action not useful."""
