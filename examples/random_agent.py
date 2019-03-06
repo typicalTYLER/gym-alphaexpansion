@@ -38,6 +38,6 @@ if __name__ == '__main__':
             steps += 1
         episodes += 1
         scores = np.append(scores, score)
-        print(running_mean(scores))
+        print(scores.mean())
 
     env.close()

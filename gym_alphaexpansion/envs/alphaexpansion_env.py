@@ -106,6 +106,9 @@ class AlphaExpansionEnv(gym.Env):
             self.rewards_given["buildings"][building] = False
         for resource in gamerules.RESOURCE_DEFINITIONS:
             self.rewards_given["income"][resource] = False
+        self.map_ndarray = np.asarray(self.game.map.map).transpose()
+        self.terrain = np.log2(utils.tile_getter(self.map_ndarray)).astype(np.uint8)
+        self.terrain_one_hot = np.eye(len(gamerules.TILE_DEFINITIONS), dtype=np.uint8)[self.terrain]
         return self._get_observation()
 
     def render(self, mode='human', close=False):
@@ -123,32 +126,33 @@ class AlphaExpansionEnv(gym.Env):
     def _get_reward(self, action_useful):
         """ Reward is given for the first building, first resource, and first income. Punished if action not useful."""
         reward = 0.0
-        resources_rewarded = []
-        buildings_rewarded = []
-        income_rewarded = []
-        for resource_id, given in self.rewards_given["resources"].items():
-            if not given:
-                if self.game.balance[resource_id] > 0:
-                    resources_rewarded.append(resource_id)
-                    reward += 1
-        for building_id, given in self.rewards_given["buildings"].items():
-            if not given:
-                if self.game.buildingAmts[building_id] > 0:
-                    buildings_rewarded.append(building_id)
-                    reward += 1
-        for resource_id, given in self.rewards_given["income"].items():
-            if not given:
-                if self.game.balDiff[resource_id] > 0:
-                    income_rewarded.append(resource_id)
-                    reward += 1
-        for resource_id in resources_rewarded:
-            self.rewards_given["resources"][resource_id] = True
-        for building_id in buildings_rewarded:
-            self.rewards_given["buildings"][building_id] = True
-        for resource_id in income_rewarded:
-            self.rewards_given["income"][resource_id] = True
-        # if not action_useful:
-        #     reward -= 0.001
+        reward += self.game.balDiff[1] + self.game.balDiff[2]
+        # resources_rewarded = []
+        # buildings_rewarded = []
+        # income_rewarded = []
+        # for resource_id, given in self.rewards_given["resources"].items():
+        #     if not given:
+        #         if self.game.balance[resource_id] > 0:
+        #             resources_rewarded.append(resource_id)
+        #             reward += 1
+        # for building_id, given in self.rewards_given["buildings"].items():
+        #     if not given:
+        #         if self.game.buildingAmts[building_id] > 0:
+        #             buildings_rewarded.append(building_id)
+        #             reward += 1
+        # for resource_id, given in self.rewards_given["income"].items():
+        #     if not given:
+        #         if self.game.balDiff[resource_id] > 0:
+        #             income_rewarded.append(resource_id)
+        #             reward += 1
+        # for resource_id in resources_rewarded:
+        #     self.rewards_given["resources"][resource_id] = True
+        # for building_id in buildings_rewarded:
+        #     self.rewards_given["buildings"][building_id] = True
+        # for resource_id in income_rewarded:
+        #     self.rewards_given["income"][resource_id] = True
+        # # if not action_useful:
+        # #     reward -= 0.001
         return reward
 
     def _get_observation(self):
@@ -161,21 +165,20 @@ class AlphaExpansionEnv(gym.Env):
                 np.dstack(
                     (stacked_relative_income_planes,
                      np.full((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1), relative_income)))
-        map_ndarray = np.asarray(self.game.map.map).transpose()
-        terrain = np.log2(utils.tile_getter(map_ndarray)).astype(np.uint8)
-        terrain_one_hot = np.eye(len(gamerules.TILE_DEFINITIONS), dtype=np.uint8)[terrain]
         buildings = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT), dtype=np.uint8)
+        building_efficiencies = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1), dtype=np.float32)
         building_dict = collections.defaultdict(list)
         max_level_building_dict = collections.OrderedDict()
         can_upgrade = np.zeros((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT, 1), dtype=np.uint8)
         can_build = np.empty((self.game.map.CHUNK_WIDTH, self.game.map.CHUNK_HEIGHT))
         for building_id in range(len(gamerules.BUILDING_DEFINITIONS)):
             can_build = np.dstack((can_build,
-                                   utils.can_build(map_ndarray,
-                                                   np.full_like(map_ndarray, building_id),
-                                                   np.full_like(map_ndarray, self.game))))
+                                   utils.can_build(self.map_ndarray,
+                                                   np.full_like(self.map_ndarray, building_id),
+                                                   np.full_like(self.map_ndarray, self.game))))
         for building in self.game.buildings:
             buildings[building.x][building.y] = building.build + 1
+            building_efficiencies[building.x][building.y][0] = building.eff
             building_dict[building.build].append(building.level)
             if gamerules.isAffordable(building.build, building.level + 1, self.game):
                 can_upgrade[building.x][building.y][0] = 1
@@ -190,9 +193,10 @@ class AlphaExpansionEnv(gym.Env):
             else:
                 building_levels[building.x][building.y][0] = 1
         space = {"relative_income": stacked_relative_income_planes,
-                 "terrain": terrain_one_hot,
+                 "terrain": self.terrain_one_hot,
                  "buildings": buildings_one_hot,
                  "building_levels": building_levels,
+                 "building_efficiencies": building_efficiencies,
                  "can_upgrade": can_upgrade,
                  "can_build": can_build
         }
